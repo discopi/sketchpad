@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Sketchpad</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root { --ink:#2a2826; --muted:#8a857f; --line:#e7e3de; --soft:#f2efeb; --accent:#3d6fd1; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; overflow:hidden; overscroll-behavior:none; background:#f9f9f9;
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color:var(--ink);
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; }
+  canvas#c { position:fixed; inset:0; touch-action:none; display:block; }
+  button { font:inherit; color:inherit; background:none; border:0; padding:0; cursor:pointer; touch-action:manipulation; }
+
+  #bar { position:fixed; top:0; left:0; right:0; z-index:5; display:flex; align-items:flex-end; gap:16px;
+    padding:calc(env(safe-area-inset-top) + 6px) max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left));
+    background:rgba(255,255,255,.96); border-bottom:1px solid var(--line); overflow-x:auto; scrollbar-width:none; }
+  #bar::-webkit-scrollbar { display:none; }
+  .group { display:flex; flex-direction:column; gap:4px; flex:none; }
+  .lbl { font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding-left:2px; }
+  .sw { display:flex; gap:7px; }
+  .swatch { width:32px; height:32px; border-radius:50%; position:relative; box-shadow:inset 0 0 0 1px rgba(0,0,0,.14); }
+  .swatch.cur::after { content:""; position:absolute; left:50%; bottom:-6px; width:4px; height:4px; margin-left:-2px; border-radius:50%; background:var(--muted); }
+  .swatch.on { outline:2.5px solid var(--ink); outline-offset:2.5px; }
+  .swatch.on::after { background:var(--ink); }
+  .swatch-add { width:32px; height:32px; border-radius:50%; border:1.5px dashed #c9c4be; color:var(--muted); display:grid; place-items:center; }
+  .swatch-add svg { width:16px; height:16px; }
+  #hexdel[hidden] { display:none; }
+  .sep { width:1px; align-self:stretch; background:var(--line); flex:none; margin:2px 0; }
+  .icons { display:flex; gap:4px; flex:none; }
+  .ib { width:38px; height:38px; border-radius:10px; display:grid; place-items:center; flex:none; }
+  .ib svg { width:22px; height:22px; }
+  .ib.on { background:var(--ink); color:#fff; }
+  .ib:disabled { opacity:.3; }
+  .spacer { flex:1; min-width:4px; }
+  #clear.warn { background:#c94a3b; color:#fff; width:auto; padding:0 12px; font-size:14px; }
+
+  #sub { position:fixed; z-index:4; left:max(14px, env(safe-area-inset-left)); display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:6px 8px; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 14px rgba(0,0,0,.06); font-size:14px; max-width:calc(100% - 28px); }
+  #sub[hidden] { display:none; }
+  .sl { color:var(--muted); font-size:12px; padding:0 2px 0 4px; }
+  .hint { color:var(--muted); padding:4px 6px; }
+  .seg { display:flex; background:var(--soft); border-radius:8px; padding:2px; }
+  .seg button { padding:6px 11px; border-radius:6px; font-size:14px; }
+  .seg button.on { background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.12); font-weight:600; }
+  .pill { padding:7px 12px; border-radius:8px; background:var(--soft); font-size:14px; }
+  .pill.on { background:var(--ink); color:#fff; }
+  .pill.danger { color:#b23b2e; }
+  .vdiv { width:1px; height:24px; background:var(--line); margin:0 2px; }
+
+  .pop { position:fixed; z-index:10; background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.14); padding:14px; }
+  .pop[hidden] { display:none; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .row + .row { margin-top:10px; }
+  #hexin { font:16px ui-monospace, Menlo, monospace; width:120px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; text-transform:uppercase; -webkit-user-select:text; user-select:text; }
+  #hexin.bad { border-color:#c94a3b; }
+  #hexprev { width:38px; height:38px; border-radius:8px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.14); flex:none; }
+  #hexpick { width:38px; height:38px; padding:0; border:0; background:none; }
+  .btn { padding:9px 14px; border-radius:9px; background:var(--soft); font-size:15px; }
+  .btn.primary { background:var(--ink); color:#fff; }
+  .ptitle { font-weight:600; margin-bottom:10px; }
+  .check { display:flex; align-items:center; gap:8px; font-size:15px; }
+  .check input { width:20px; height:20px; }
+  #exportpop { right:max(14px, env(safe-area-inset-right)); width:300px; }
+  #exp-img { display:block; max-width:100%; max-height:42vh; margin:12px auto 8px; border-radius:6px;
+    background:repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0/16px 16px; -webkit-touch-callout:default; }
+  .small { font-size:12px; color:var(--muted); }
+  #palbtn { height:32px; display:flex; align-items:center; gap:2px; padding:0 6px 0 10px; border-radius:8px; background:var(--soft); font-size:14px; max-width:150px; }
+  #palname { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #palbtn svg { width:16px; height:16px; flex:none; }
+  #palpop { width:300px; }
+  .prow { display:flex; align-items:center; gap:6px; padding:4px; border-radius:9px; }
+  .prow.on { background:var(--soft); }
+  .prow .pick { flex:1; display:flex; align-items:center; gap:10px; text-align:left; padding:4px; min-width:0; }
+  .prow .pick span.n { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:15px; }
+  .dots { display:flex; flex:none; }
+  .dots i { width:14px; height:14px; border-radius:50%; margin-right:-4px; box-shadow:0 0 0 1.5px #fff, inset 0 0 0 1px rgba(0,0,0,.14); }
+  .prow .mini { width:32px; height:32px; border-radius:8px; display:grid; place-items:center; color:var(--muted); flex:none; }
+  .prow .mini svg { width:17px; height:17px; }
+  .prow input { flex:1; font-size:16px; padding:6px 8px; border:1px solid var(--line); border-radius:7px; min-width:0; -webkit-user-select:text; user-select:text; }
+  #sub select { font-size:16px; padding:5px 8px; border:1px solid var(--line); border-radius:8px; background:var(--soft); color:var(--ink); max-width:180px; }
+  .vh { position:fixed; left:0; top:0; width:1px; height:1px; opacity:0; overflow:hidden; pointer-events:none; }
+  .bk { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+  .bk .row { margin-top:10px; }
+  #editor { position:fixed; z-index:3; margin:0; padding:0; border:0; background:transparent; resize:none; overflow:hidden;
+    white-space:pre-wrap; overflow-wrap:break-word; outline:1.5px dashed var(--accent); outline-offset:6px; caret-color:var(--accent);
+    -webkit-user-select:text; user-select:text; transform-origin:0 0; }
+  #editor[hidden] { display:none; }
+  #toast { position:fixed; z-index:20; left:50%; bottom:calc(24px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:9px 14px; border-radius:10px; font-size:14px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="bar">
+  <div class="group"><span class="lbl">Palette</span><button id="palbtn"><span id="palname"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg></button></div>
+  <div class="sep"></div>
+  <div class="group" data-group="pen"><span class="lbl">Pen</span><div class="sw"></div></div>
+  <div class="group" data-group="background"><span class="lbl">Background</span><div class="sw"></div></div>
+  <div class="group" data-group="shadow"><span class="lbl">Shadow</span><div class="sw"></div></div>
+  <div class="sep"></div>
+  <div class="icons">
+    <button class="ib tool" data-tool="select" title="Select"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="13" height="13" rx="2" stroke-dasharray="3 2.6"/><path d="M12.5 12.5l7.5 2.8-3.3 1.4-1.4 3.3z" fill="currentColor"/></svg></button>
+    <button class="ib tool" data-tool="nudge" title="Nudge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8" stroke-dasharray="3 2.6"/><path d="M8.5 12h7m-2.5-2.5 2.5 2.5-2.5 2.5"/></svg></button>
+    <button class="ib tool" data-tool="text" title="Text"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7V4.5h14V7M12 4.5v15M9 19.5h6"/></svg></button>
+    <button class="ib tool" data-tool="eraser" title="Eraser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 20h10"/><path d="M14.3 4.6l5.1 5.1a1.5 1.5 0 0 1 0 2.1L11.2 20H7.6l-3-3a1.5 1.5 0 0 1 0-2.1z"/><path d="M9 10l5 5"/></svg></button>
+  </div>
+  <div class="spacer"></div>
+  <div class="icons">
+    <button class="ib" id="grid" title="Grid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/></svg></button>
+    <button class="ib" id="undo" title="Undo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5.5 4.5 10 9 14.5"/><path d="M5 10h9a5 5 0 0 1 0 10h-3"/></svg></button>
+    <button class="ib" id="redo" title="Redo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.5l4.5 4.5-4.5 4.5"/><path d="M19 10h-9a5 5 0 0 0 0 10h3"/></svg></button>
+    <button class="ib" id="export" title="Export PNG"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m-4 4 4-4 4 4"/><path d="M5 13v5.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V13"/></svg></button>
+    <button class="ib" id="clear" title="Clear canvas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5"/></svg></button>
+  </div>
+</div>
+<div id="sub" hidden></div>
+
+<div id="hexpop" class="pop" hidden>
+  <div class="row"><div id="hexprev"></div><input id="hexin" type="text" maxlength="7" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"><input id="hexpick" type="color" title="Colour picker"></div>
+  <div class="row" style="justify-content:flex-end"><button class="btn" id="hexdel" style="color:#b23b2e;margin-right:auto">Delete</button><button class="btn" id="hexcancel">Cancel</button><button class="btn primary" id="hexok">Save</button></div>
+</div>
+
+<div id="palpop" class="pop" hidden>
+  <div class="ptitle">Palettes</div>
+  <div id="pallist"></div>
+  <div class="row"><button class="btn" id="palnew">New palette</button></div>
+  <div class="small" style="margin-top:8px">A new palette starts as a copy of the current one.</div>
+</div>
+
+<div id="exportpop" class="pop" hidden>
+  <div class="ptitle" id="exp-title">Export drawing</div>
+  <label class="check"><input type="checkbox" id="exp-bg"> Include background (#F9F9F9)</label>
+  <div class="row"><button class="btn primary" id="exp-go">Create PNG</button><button class="btn" id="exp-close">Close</button></div>
+  <div id="exp-result" hidden>
+    <img id="exp-img" alt="Exported sketch">
+    <div class="small">Press and hold the image to save or copy it.</div>
+    <div class="row"><button class="btn primary" id="exp-save" hidden>Save PNG</button></div>
+  </div>
+  <div class="bk">
+    <div class="ptitle" style="margin-bottom:4px">Backup</div>
+    <div class="small">One file with your drawing, palettes and fonts. Keep it somewhere safe, such as Drive.</div>
+    <div class="row" id="bk-btns"><button class="btn" id="bk-save">Save backup</button><label class="btn" for="bkfile" role="button" style="cursor:pointer">Restore backup</label></div>
+    <div id="bk-confirm" hidden>
+      <div class="small" id="bk-msg" style="color:var(--ink);margin-top:10px"></div>
+      <div class="row"><button class="btn primary" id="bk-yes">Replace and restore</button><button class="btn" id="bk-no">Cancel</button></div>
+    </div>
+  </div>
+</div>
+<input type="file" id="bkfile" class="vh">
+<div id="toast"></div>
+<input type="file" id="fontfile" class="vh">
+<textarea id="editor" spellcheck="false" hidden></textarea>
+
+<script>
+(() => {
+'use strict';
+const LAYERS = ['shadow', 'background', 'pen'];          // bottom → top
+const PAPER = '#f9f9f9';
+const PEN_W = 7, SHADOW_W = 79;
+const ERASER = { S: 14, M: 40, L: 100 };                 // screen px
+const MIN_S = 0.1, MAX_S = 12;
+const STORE = 'sketchpad.v1';
+
+let state = {
+  palettes: [{ name: 'Palette 1', colours: { pen: ['#1f1f1f', '#ffffff'], background: ['#a9d8c0', '#f8d47a', '#f2a7a1'], shadow: ['#b893c7', '#d8d2cc'] } }],
+  paletteIndex: 0,
+  active: { pen: 0, background: 0, shadow: 0 },
+  tool: 'pen', smoothing: 0.02, dashed: false, grid: true, eraserSize: 'M', nudgeSize: 'M', shadowFront: false,
+  layerFor: { select: 'all', nudge: 'pen', eraser: 'pen' }, exportBg: true
+};
+let doc = { shadow: [], background: [], pen: [] };
+let view = { x: 0, y: 0, s: 1 };
+
+// ---------- persistence ----------
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
+  if (saved) {
+    if (saved.state) {
+      const s = saved.state;
+      Object.assign(state, s);
+      if (!Array.isArray(s.palettes) || !s.palettes.length) {
+        state.palettes = [{ name: 'Palette 1', colours: s.palette || state.palettes[0].colours }];
+        state.paletteIndex = 0;
+      }
+      delete state.palette;
+      if (!state.palettes[state.paletteIndex]) state.paletteIndex = 0;
+      state.layerFor = Object.assign({ select: 'all', nudge: 'pen', eraser: 'pen' }, s.layerFor || {});
+    }
+    if (saved.doc) for (const L of LAYERS) if (Array.isArray(saved.doc[L])) doc[L] = saved.doc[L];
+    if (saved.view && isFinite(saved.view.s)) view = saved.view;
+  }
+} catch (e) {}
+let saveTimer = 0, warned = false;
+function writeSave() {
+  saveTimer = 0;
+  try { localStorage.setItem(STORE, JSON.stringify({ state, doc, view })); }
+  catch (e) { if (!warned) { warned = true; toast("Couldn't autosave in this browser"); } }
+}
+// saving the whole drawing is the slow bit, so wait for a pause in drawing, and always save when the app is put away
+function save() { clearTimeout(saveTimer); saveTimer = setTimeout(writeSave, 1500); }
+function flushSave() { if (saveTimer) { clearTimeout(saveTimer); writeSave(); } }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
+addEventListener('pagehide', flushSave);
+
+// ---------- history ----------
+let undoStack = [], redoStack = [];
+// snapshots share unchanged items; anything about to be edited in place is copied first (cow)
+function snap() { return { shadow: doc.shadow.slice(), background: doc.background.slice(), pen: doc.pen.slice() }; }
+function pushHistory() { undoStack.push(snap()); if (undoStack.length > 80) undoStack.shift(); redoStack = []; updateUndo(); }
+function restore(sn) { doc = { shadow: sn.shadow.slice(), background: sn.background.slice(), pen: sn.pen.slice() }; sel = null; allDirty(); updateSub(); requestRender(); save(); updateUndo(); }
+function undo() { if (!undoStack.length) return; redoStack.push(snap()); restore(undoStack.pop()); }
+function redo() { if (!redoStack.length) return; undoStack.push(snap()); restore(redoStack.pop()); }
+function cow(L, op) { const i = doc[L].indexOf(op); if (i < 0) return op; const c = JSON.parse(JSON.stringify(op)); doc[L][i] = c; return c; }
+
+// ---------- canvas setup ----------
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const caches = {};
+for (const L of [...LAYERS, 'shadowFront', 'text']) { const c = document.createElement('canvas'); caches[L] = { c, x: c.getContext('2d'), dirty: true }; }
+const scratch = document.createElement('canvas'), sctx = scratch.getContext('2d');
+const below = document.createElement('canvas'), bctx = below.getContext('2d');
+const above = document.createElement('canvas'), actx = above.getContext('2d');
+let cacheVersion = 0, compKey = '';
+let dpr = 1, W = 0, H = 0;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight;
+  for (const c of [canvas, scratch, below, above, ...Object.values(caches).map(k => k.c)]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  positionSub(); allDirty(); requestRender();
+}
+function allDirty() { for (const k of Object.values(caches)) k.dirty = true; }
+function dirty(L) { caches[L].dirty = true; if (L === 'pen') caches.text.dirty = true; if (L === 'shadow') caches.shadowFront.dirty = true; }
+// draw order: shadow (behind), background, shadow in front of background, pen; erase ops apply to both shadow passes
+const PASSES = [
+  { key: 'shadow', L: 'shadow', f: op => !op.front },
+  { key: 'background', L: 'background', f: op => op.kind !== 'text' },
+  { key: 'shadowFront', L: 'shadow', f: op => op.front || op.kind === 'erase' },
+  { key: 'pen', L: 'pen', f: op => op.kind !== 'text' }
+];
+function viewT(c) { c.setTransform(dpr * view.s, 0, 0, dpr * view.s, dpr * view.x, dpr * view.y); }
+function toWorld(px, py) { return [(px - view.x) / view.s, (py - view.y) / view.s]; }
+function toScreen(wx, wy) { return [wx * view.s + view.x, wy * view.s + view.y]; }
+function viewChanged() { allDirty(); requestRender(); save(); if (editing) styleEditor(); }
+
+// ---------- drawing ops ----------
+function tracePath(c, p, closed) {
+  const n = p.length / 2;
+  c.beginPath(); c.moveTo(p[0], p[1]);
+  if (n === 1) c.lineTo(p[0] + 0.01, p[1]);
+  else if (n === 2) c.lineTo(p[2], p[3]);
+  else {
+    for (let i = 1; i < n - 1; i++) c.quadraticCurveTo(p[2*i], p[2*i+1], (p[2*i] + p[2*i+2]) / 2, (p[2*i+1] + p[2*i+3]) / 2);
+    c.lineTo(p[2*n-2], p[2*n-1]);
+  }
+  if (closed) c.closePath();
+}
+const DEFAULT_FONT = '-apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif';
+const fonts = [];   // {id, name, family}
+function familyFor(id) { const f = fonts.find(f => f.id === id); return (f ? `"${f.family}", ` : '') + DEFAULT_FONT; }
+const mctx = document.createElement('canvas').getContext('2d');
+let layoutCache = new WeakMap();
+function layoutText(op) {
+  const key = op.text + '|' + op.bw + '|' + op.size + '|' + op.font + '|' + fonts.length;
+  const hit = layoutCache.get(op); if (hit && hit.key === key) return hit.lines;
+  mctx.font = `${op.size}px ${familyFor(op.font)}`;
+  const fits = t => mctx.measureText(t).width <= op.bw;
+  const lines = [];
+  for (const para of op.text.split('\n')) {
+    let line = '';
+    for (let word of para.split(' ')) {
+      const test = line ? line + ' ' + word : word;
+      if (fits(test)) { line = test; continue; }
+      if (line) { lines.push(line); line = ''; }
+      while (word.length > 1 && !fits(word)) {
+        let n = word.length - 1; while (n > 1 && !fits(word.slice(0, n))) n--;
+        lines.push(word.slice(0, n)); word = word.slice(n);
+      }
+      line = word;
+    }
+    lines.push(line);
+  }
+  layoutCache.set(op, { key, lines });
+  return lines;
+}
+function drawText(c, op) {
+  c.globalCompositeOperation = 'source-over'; c.fillStyle = op.color; c.textBaseline = 'top';
+  c.font = `${op.size}px ${familyFor(op.font)}`;
+  const lines = layoutText(op), lh = op.size * op.lh, pad = (lh - op.size) / 2;
+  lines.forEach((ln, i) => c.fillText(ln, op.pts[0], op.pts[1] + pad + i * lh));
+}
+function drawVariable(c, op) {
+  const p = op.pts, w = op.ws;
+  const n = p.length / 2;
+  c.globalCompositeOperation = 'source-over'; c.fillStyle = op.color; c.beginPath();
+  for (let i = 0; i < n; i++) { const x = p[2*i], y = p[2*i+1], rr = w[i] / 2; c.moveTo(x + rr, y); c.arc(x, y, rr, 0, Math.PI * 2); }
+  for (let i = 0; i < n - 1; i++) {
+    const x0 = p[2*i], y0 = p[2*i+1], x1 = p[2*i+2], y1 = p[2*i+3], L = Math.hypot(x1 - x0, y1 - y0);
+    if (!L) continue;
+    const nx = -(y1 - y0) / L, ny = (x1 - x0) / L, r0 = w[i] / 2, r1 = w[i+1] / 2;
+    const q = [x0 + nx * r0, y0 + ny * r0, x1 + nx * r1, y1 + ny * r1, x1 - nx * r1, y1 - ny * r1, x0 - nx * r0, y0 - ny * r0];
+    let area = 0; for (let k = 0; k < 8; k += 2) area += q[k] * q[(k + 3) % 8] - q[(k + 2) % 8] * q[k + 1];
+    if (area < 0) { c.moveTo(q[6], q[7]); c.lineTo(q[4], q[5]); c.lineTo(q[2], q[3]); c.lineTo(q[0], q[1]); }   // same winding as the circles
+    else { c.moveTo(q[0], q[1]); c.lineTo(q[2], q[3]); c.lineTo(q[4], q[5]); c.lineTo(q[6], q[7]); }
+    c.closePath();
+  }
+  c.fill('nonzero');
+}
+function drawOp(c, op) {
+  if (op.ws && op.ws.length === op.pts.length / 2) { drawVariable(c, op); return; }
+  if (op.kind === 'text') { drawText(c, op); return; }
+  if (op.kind === 'fill') {
+    if (op.pts.length < 6) return;
+    c.globalCompositeOperation = 'source-over'; c.fillStyle = op.color; tracePath(c, op.pts, true); c.fill(); return;
+  }
+  c.globalCompositeOperation = op.kind === 'erase' ? 'destination-out' : 'source-over';
+  c.strokeStyle = op.kind === 'erase' ? '#000' : op.color;
+  c.lineWidth = op.w; c.lineCap = 'round'; c.lineJoin = 'round';
+  c.setLineDash(op.dash ? [op.w * 1.6, op.w * 2.7] : []);
+  tracePath(c, op.pts, false); c.stroke();
+  c.setLineDash([]); c.globalCompositeOperation = 'source-over';
+}
+function renderOps(c, ops) {
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over';
+  c.clearRect(0, 0, c.canvas.width, c.canvas.height);
+  viewT(c); for (const op of ops) drawOp(c, op);
+}
+
+// ---------- render ----------
+let raf = 0, live = null, sel = null, action = null, hover = null;
+function requestRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }
+function refreshCaches() {
+  for (const P of PASSES) {
+    const k = caches[P.key];
+    if (k.dirty) { const ops = doc[P.L].filter(P.f); k.empty = !ops.some(op => op.kind !== 'erase'); renderOps(k.x, ops); k.dirty = false; cacheVersion++; }
+  }
+  const tk = caches.text;   // text sits above everything, untouched by the eraser
+  if (tk.dirty) { const ops = doc.pen.filter(op => op.kind === 'text' && !(editing && editing.op === op)); tk.empty = !ops.length; renderOps(tk.x, ops); tk.dirty = false; cacheVersion++; }
+}
+function paintBase(c) {
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over';
+  c.fillStyle = PAPER; c.fillRect(0, 0, canvas.width, canvas.height);
+  if (state.grid) drawGrid(c);
+}
+function blit(c, k) { if (!k.empty) { c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(k.c, 0, 0); } }
+function render() {
+  refreshCaches();
+  const active = live ? PASSES.filter(P => live.layers.includes(P.L) && P.f(live.op)) : [];
+  if (active.length === 1) {
+    // fast path while drawing: everything below and above the layer being drawn on is pre-flattened
+    const ai = PASSES.indexOf(active[0]), key = cacheVersion + '|' + state.grid + '|' + ai;
+    if (key !== compKey) {
+      paintBase(bctx); PASSES.slice(0, ai).forEach(P => blit(bctx, caches[P.key]));
+      actx.setTransform(1, 0, 0, 1, 0, 0); actx.clearRect(0, 0, above.width, above.height);
+      PASSES.slice(ai + 1).forEach(P => blit(actx, caches[P.key])); blit(actx, caches.text);
+      compKey = key;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(below, 0, 0);
+    sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.globalCompositeOperation = 'source-over';
+    sctx.clearRect(0, 0, scratch.width, scratch.height); sctx.drawImage(caches[active[0].key].c, 0, 0);
+    viewT(sctx); drawOp(sctx, live.op);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(scratch, 0, 0);
+    ctx.drawImage(above, 0, 0);
+    drawOverlay(); return;
+  }
+  paintBase(ctx);
+  for (const P of PASSES) {
+    const k = caches[P.key];
+    if (active.includes(P)) {
+      sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.globalCompositeOperation = 'source-over';
+      sctx.clearRect(0, 0, scratch.width, scratch.height); sctx.drawImage(k.c, 0, 0);
+      viewT(sctx); drawOp(sctx, live.op);
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(scratch, 0, 0);
+    } else blit(ctx, k);
+  }
+  blit(ctx, caches.text);
+  drawOverlay();
+}
+function drawGrid(ctx) {
+  let step = 25;
+  while (step * view.s < 14) step *= 4;
+  while (step * view.s > 70) step /= 4;
+  const [x0, y0] = toWorld(0, 0), [x1, y1] = toWorld(W, H);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.lineWidth = 1;
+  const draw = (major) => {
+    ctx.beginPath();
+    for (let k = Math.floor(x0 / step); k <= Math.ceil(x1 / step); k++) {
+      if ((k % 4 === 0) !== major) continue;
+      const sx = Math.round(k * step * view.s + view.x) + 0.5; ctx.moveTo(sx, 0); ctx.lineTo(sx, H);
+    }
+    for (let k = Math.floor(y0 / step); k <= Math.ceil(y1 / step); k++) {
+      if ((k % 4 === 0) !== major) continue;
+      const sy = Math.round(k * step * view.s + view.y) + 0.5; ctx.moveTo(0, sy); ctx.lineTo(W, sy);
+    }
+    ctx.strokeStyle = major ? 'rgba(70,130,200,.30)' : 'rgba(70,130,200,.14)'; ctx.stroke();
+  };
+  draw(false); draw(true);
+}
+function drawOverlay() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalCompositeOperation = 'source-over';
+  if (action && action.type === 'lasso' && action.pts.length > 2) {
+    ctx.beginPath();
+    for (let i = 0; i < action.pts.length; i += 2) { const [sx, sy] = toScreen(action.pts[i], action.pts[i+1]); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }
+    ctx.closePath(); ctx.fillStyle = 'rgba(61,111,209,.06)'; ctx.fill();
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = '#3d6fd1'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (sel) {
+    const b = selBox();
+    if (b) {
+      const [ax, ay] = toScreen(b.x0, b.y0), [bx, by] = toScreen(b.x1, b.y1);
+      ctx.setLineDash([6, 4]); ctx.strokeStyle = '#3d6fd1'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(ax - 8, ay - 8, bx - ax + 16, by - ay + 16); ctx.setLineDash([]);
+      for (const [hx, hy] of handlePoints(b)) { ctx.beginPath(); ctx.arc(hx, hy, 8, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2; ctx.stroke(); }
+      for (const [hx, hy] of sideHandles(b)) { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(hx - 5, hy - 14, 10, 28, 5); else ctx.rect(hx - 5, hy - 14, 10, 28); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2; ctx.stroke(); }
+    }
+  }
+  if (hover && (state.tool === 'eraser' || state.tool === 'nudge')) {
+    const r = (state.tool === 'eraser' ? ERASER[state.eraserSize] : ERASER[state.nudgeSize]) / 2;
+    ctx.beginPath(); ctx.arc(hover[0], hover[1], r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.beginPath(); ctx.arc(hover[0], hover[1], r + 1, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.stroke();
+  }
+}
+
+// ---------- geometry ----------
+function opBox(op) {
+  if (op.kind === 'text') {
+    const h = Math.max(1, layoutText(op).length) * op.size * op.lh;
+    return { x0: op.pts[0], y0: op.pts[1], x1: op.pts[0] + op.bw, y1: op.pts[1] + h };
+  }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i < op.pts.length; i += 2) { const x = op.pts[i], y = op.pts[i+1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const h = op.kind === 'fill' ? 0 : op.w / 2;
+  return { x0: x0 - h, y0: y0 - h, x1: x1 + h, y1: y1 + h };
+}
+function unionBox(ops) {
+  let b = null;
+  for (const op of ops) { if (op.kind === 'erase') continue; const o = opBox(op); b = b ? { x0: Math.min(b.x0, o.x0), y0: Math.min(b.y0, o.y0), x1: Math.max(b.x1, o.x1), y1: Math.max(b.y1, o.y1) } : o; }
+  return b;
+}
+function selBox() { return sel ? unionBox(sel.items.map(it => it.op)) : null; }
+function handlePoints(b) {
+  const [ax, ay] = toScreen(b.x0, b.y0), [bx, by] = toScreen(b.x1, b.y1);
+  return [[ax - 8, ay - 8], [bx + 8, ay - 8], [bx + 8, by + 8], [ax - 8, by + 8]];
+}
+function singleText() { return sel && sel.items.length === 1 && sel.items[0].op.kind === 'text' ? sel.items[0].op : null; }
+function sideHandles(b) {
+  if (!singleText()) return [];
+  const [ax, ay] = toScreen(b.x0, b.y0), [bx, by] = toScreen(b.x1, b.y1);
+  return [[ax - 8, (ay + by) / 2], [bx + 8, (ay + by) / 2]];
+}
+function pip(poly, x, y) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 2; i < poly.length; j = i, i += 2) {
+    const xi = poly[i], yi = poly[i+1], xj = poly[j], yj = poly[j+1];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+function segDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy;
+  let t = l ? ((px - ax) * dx + (py - ay) * dy) / l : 0; t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+}
+function hitOp(op, x, y, tol) {
+  if (op.kind === 'text') { const b = opBox(op); return x >= b.x0 - tol && x <= b.x1 + tol && y >= b.y0 - tol && y <= b.y1 + tol; }
+  const p = op.pts;
+  if (op.kind === 'fill' && p.length >= 6 && pip(p, x, y)) return true;
+  const lim = (op.kind === 'fill' ? 0 : op.w / 2) + tol;
+  if (p.length === 2) return Math.hypot(x - p[0], y - p[1]) <= lim;
+  for (let i = 0; i < p.length - 2; i += 2) if (segDist(x, y, p[i], p[i+1], p[i+2], p[i+3]) <= lim) return true;
+  return false;
+}
+function densify(p, step) {
+  if (p.length < 4) return p.slice();
+  const out = [p[0], p[1]]; let px = p[0], py = p[1];
+  for (let i = 2; i < p.length; i += 2) {
+    const x = p[i], y = p[i+1], n = Math.floor(Math.hypot(x - px, y - py) / step);
+    for (let j = 1; j < n; j++) out.push(px + (x - px) * j / n, py + (y - py) * j / n);
+    out.push(x, y); px = x; py = y;
+  }
+  return out;
+}
+const round = p => p.map(v => Math.round(v * 100) / 100);
+function densifyW(op, step = 4) {
+  const p = op.pts, w = op.ws; if (p.length < 4) { op.pts = round(p); op.ws = w.map(v => Math.round(v * 10) / 10); return; }
+  const out = [p[0], p[1]], ow = [w[0]];
+  for (let i = 2; i < p.length; i += 2) {
+    const px = p[i-2], py = p[i-1], x = p[i], y = p[i+1], w0 = w[i/2 - 1], w1 = w[i/2];
+    const n = Math.floor(Math.hypot(x - px, y - py) / step);
+    for (let j = 1; j < n; j++) { out.push(px + (x - px) * j / n, py + (y - py) * j / n); ow.push(w0 + (w1 - w0) * j / n); }
+    out.push(x, y); ow.push(w1);
+  }
+  op.pts = round(out); op.ws = ow.map(v => Math.round(v * 10) / 10);
+}
+const clone = op => JSON.parse(JSON.stringify(op));
+const layersFor = w => w === 'all' ? LAYERS.slice() : [w];
+
+// ---------- input ----------
+const touches = new Map();
+let gesture = null, tapTrack = null, penSeen = false, spaceDown = false;
+
+canvas.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+canvas.addEventListener('pointerdown', onDown);
+canvas.addEventListener('pointermove', onMove);
+canvas.addEventListener('pointerup', onUp);
+canvas.addEventListener('pointercancel', onUp);
+canvas.addEventListener('pointerleave', e => { if (!action && e.pointerType !== 'touch') { hover = null; requestRender(); } });
+
+function onDown(e) {
+  closePops();
+  if (editing) { commitText(); if (state.tool === 'text') return; }
+  if (e.pointerType === 'touch') {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    if (!tapTrack) tapTrack = { t: performance.now(), max: 0, moved: 0, bad: false };
+    tapTrack.max = Math.max(tapTrack.max, touches.size);
+    if (action && action.pointerType !== 'touch') { tapTrack.bad = true; return; }   // palm while drawing with pen/mouse
+    if (!penSeen && touches.size === 1 && !action) { tapTrack.bad = true; startAction(e); return; }
+    if (action && action.pointerType === 'touch') { cancelAction(); tapTrack.bad = false; }
+    baseline(); return;
+  }
+  if (e.pointerType === 'pen') { penSeen = true; gesture = null; }
+  if (action) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  if (e.pointerType === 'mouse' && (e.button === 1 || spaceDown)) { action = { type: 'pan', pointerId: e.pointerId, pointerType: 'mouse', lx: e.clientX, ly: e.clientY }; return; }
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  startAction(e);
+}
+
+function onMove(e) {
+  if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
+    const p = touches.get(e.pointerId);
+    if (tapTrack) tapTrack.moved += Math.hypot(e.clientX - p.x, e.clientY - p.y);
+    p.x = e.clientX; p.y = e.clientY;
+    if (gesture) { updateGesture(); return; }
+  }
+  if (!action) {
+    if (e.pointerType !== 'touch') { hover = [e.clientX, e.clientY]; if (state.tool === 'eraser' || state.tool === 'nudge') requestRender(); }
+    return;
+  }
+  if (e.pointerId !== action.pointerId) return;
+  const a = action;
+  if (a.type === 'pan') { view.x += e.clientX - a.lx; view.y += e.clientY - a.ly; a.lx = e.clientX; a.ly = e.clientY; viewChanged(); return; }
+  let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null; if (!evs || !evs.length) evs = [e];
+  if (a.type === 'draw') { for (const ev of evs) addPoint(...toWorld(ev.clientX, ev.clientY), ev); hover = [e.clientX, e.clientY]; requestRender(); return; }
+  const [wx, wy] = toWorld(e.clientX, e.clientY);
+  if (a.type === 'lasso') {
+    const n = a.pts.length;
+    if (Math.hypot(wx - a.pts[n-2], wy - a.pts[n-1]) * view.s > 2) a.pts.push(wx, wy);
+    requestRender(); return;
+  }
+  if (a.type === 'move' || a.type === 'scale' || a.type === 'width') { transformSel(wx, wy); return; }
+  if (a.type === 'nudge') { for (const ev of evs) nudgeTo(...toWorld(ev.clientX, ev.clientY)); hover = [e.clientX, e.clientY]; requestRender(); }
+}
+
+function onUp(e) {
+  if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
+    touches.delete(e.pointerId);
+    if (action && action.pointerId === e.pointerId) endAction(e.type === 'pointercancel');
+    if (touches.size === 0) {
+      if (tapTrack && !tapTrack.bad && gesture && tapTrack.moved < 14 && performance.now() - tapTrack.t < 350) {
+        if (tapTrack.max === 2) undo(); else if (tapTrack.max === 3) redo();
+      }
+      gesture = null; tapTrack = null;
+    } else if (gesture) baseline();
+    return;
+  }
+  if (action && action.pointerId === e.pointerId) endAction(e.type === 'pointercancel');
+}
+
+// gestures
+function centroid(pts) { let x = 0, y = 0; for (const p of pts) { x += p.x; y += p.y; } return { x: x / pts.length, y: y / pts.length }; }
+function baseline() {
+  const pts = [...touches.values()];
+  gesture = { c: centroid(pts), d: pts.length > 1 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0, x: view.x, y: view.y, s: view.s, n: pts.length };
+}
+function updateGesture() {
+  const pts = [...touches.values()];
+  if (pts.length !== gesture.n) { baseline(); return; }
+  const c = centroid(pts); let s = gesture.s;
+  if (pts.length > 1 && gesture.d > 0) s = Math.max(MIN_S, Math.min(MAX_S, gesture.s * Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) / gesture.d));
+  const k = s / gesture.s;
+  view.s = s; view.x = c.x - (gesture.c.x - gesture.x) * k; view.y = c.y - (gesture.c.y - gesture.y) * k;
+  viewChanged();
+}
+function zoomAt(px, py, f) {
+  const s = Math.max(MIN_S, Math.min(MAX_S, view.s * f)), k = s / view.s;
+  view.x = px - (px - view.x) * k; view.y = py - (py - view.y) * k; view.s = s; viewChanged();
+}
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
+  else { view.x -= e.deltaX; view.y -= e.deltaY; viewChanged(); }
+}, { passive: false });
+
+// actions
+function pal() { return state.palettes[state.paletteIndex].colours; }
+function curColor(g) { return pal()[g][state.active[g]]; }
+function startAction(e) {
+  const [wx, wy] = toWorld(e.clientX, e.clientY);
+  const base = { pointerId: e.pointerId, pointerType: e.pointerType, tool: state.tool };
+  const t = state.tool;
+  if (t === 'pen' || t === 'background' || t === 'shadow' || t === 'eraser') {
+    let op, layers;
+    if (t === 'pen') { op = { kind: 'stroke', color: curColor('pen'), w: PEN_W, dash: state.dashed, pts: [wx, wy] }; layers = ['pen']; }
+    else if (t === 'background') { op = { kind: 'fill', color: curColor('background'), pts: [wx, wy] }; layers = ['background']; }
+    else if (t === 'shadow') { op = { kind: 'stroke', color: curColor('shadow'), w: SHADOW_W, pts: [wx, wy], ws: [SHADOW_W * 0.6] }; if (state.shadowFront) op.front = true; layers = ['shadow']; }
+    else { op = { kind: 'erase', w: ERASER[state.eraserSize] / view.s, pts: [wx, wy] }; layers = [state.layerFor.eraser]; }
+    live = { op, layers };
+    action = Object.assign(base, { type: 'draw', lz: [wx, wy], raw: [wx, wy], t: e.timeStamp, sx: e.clientX, sy: e.clientY, pmode: false, wf: null });
+    if (op.ws) op.ws[0] = SHADOW_W * dynFactor(e);
+    requestRender(); return;
+  }
+  if (t === 'text') { action = Object.assign(base, { type: 'texttap', start: [wx, wy] }); return; }
+  if (t === 'nudge') {
+    pushHistory();
+    let target = nudgeTarget(wx, wy); if (target) target = cow(state.layerFor.nudge, target);
+    action = Object.assign(base, { type: 'nudge', prev: [wx, wy], changed: false, touched: new Set(), target });
+    hover = [e.clientX, e.clientY]; requestRender(); return;
+  }
+  if (t === 'select') {
+    if (sel) {
+      const b = selBox();
+      if (b) {
+        const sh = sideHandles(b);
+        for (let i = 0; i < sh.length; i++) {
+          if (Math.hypot(e.clientX - sh[i][0], e.clientY - sh[i][1]) < 24) { startTransform(base, 'width', wx, wy, { side: i }); return; }
+        }
+        const hs = handlePoints(b);
+        for (let i = 0; i < 4; i++) {
+          if (Math.hypot(e.clientX - hs[i][0], e.clientY - hs[i][1]) < 24) {
+            const corners = [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]];
+            startTransform(base, 'scale', wx, wy, { anchor: corners[(i + 2) % 4], handle: corners[i] }); return;
+          }
+        }
+        const pad = 8 / view.s;
+        if (wx >= b.x0 - pad && wx <= b.x1 + pad && wy >= b.y0 - pad && wy <= b.y1 + pad) { startTransform(base, 'move', wx, wy, {}); return; }
+      }
+    }
+    sel = null; updateSub();
+    action = Object.assign(base, { type: 'lasso', pts: [wx, wy] }); requestRender();
+  }
+}
+// dynamic shadow brush: width follows pen pressure; without pressure (finger, mouse) it thins as you move faster
+function dynFactor(ev) {
+  const a = action;
+  if (ev.pointerType === 'pen' && ev.pressure > 0 && ev.pressure !== 0.5) a.pmode = true;
+  let target;
+  if (a.pmode) target = 0.3 + 0.7 * Math.pow(Math.min(1, ev.pressure), 0.8);
+  else {
+    const dt = Math.max(1, ev.timeStamp - a.t), v = Math.hypot(ev.clientX - a.sx, ev.clientY - a.sy) / dt;
+    target = Math.max(0.35, Math.min(1, 1.1 - v * 0.35));
+  }
+  a.t = ev.timeStamp; a.sx = ev.clientX; a.sy = ev.clientY;
+  a.wf = a.wf == null ? target : a.wf * 0.75 + target * 0.25;
+  return a.wf;
+}
+function addPoint(wx, wy, ev) {
+  const a = action, op = live.op; a.raw = [wx, wy];
+  if (op.ws && ev) {
+    const f = dynFactor(ev), n = op.pts.length;
+    if (Math.hypot(wx - op.pts[n-2], wy - op.pts[n-1]) * view.s >= 0.8) { op.pts.push(wx, wy); op.ws.push(SHADOW_W * f); }
+    return;
+  }
+  if (a.tool === 'pen') {
+    const R = state.smoothing * 50 / view.s;
+    const dx = wx - a.lz[0], dy = wy - a.lz[1], d = Math.hypot(dx, dy);
+    if (d <= R) return;
+    const k = (d - R) / d; a.lz[0] += dx * k; a.lz[1] += dy * k; wx = a.lz[0]; wy = a.lz[1];
+  }
+  const n = op.pts.length;
+  if (Math.hypot(wx - op.pts[n-2], wy - op.pts[n-1]) * view.s >= 0.8) op.pts.push(wx, wy);
+}
+function startTransform(base, type, wx, wy, extra) {
+  pushHistory();
+  sel.items = sel.items.map(it => ({ L: it.L, op: cow(it.L, it.op) }));
+  action = Object.assign(base, { type, start: [wx, wy], orig: sel.items.map(it => it.op.pts.slice()), meta: sel.items.map(it => ({ size: it.op.size, bw: it.op.bw })), moved: false }, extra);
+}
+function transformSel(wx, wy) {
+  const a = action; a.moved = true;
+  if (a.type === 'move') {
+    const dx = wx - a.start[0], dy = wy - a.start[1];
+    sel.items.forEach((it, j) => { const o = a.orig[j]; for (let i = 0; i < o.length; i += 2) { it.op.pts[i] = o[i] + dx; it.op.pts[i+1] = o[i+1] + dy; } });
+  } else if (a.type === 'width') {
+    const op = sel.items[0].op, x0 = a.orig[0][0], x1 = x0 + a.meta[0].bw, minW = op.size * 1.2;
+    if (a.side === 1) op.bw = Math.max(minW, wx - x0);
+    else { const nx = Math.min(wx, x1 - minW); op.pts[0] = nx; op.bw = x1 - nx; }
+  } else {
+    const [ax, ay] = a.anchor, hx = a.handle[0] - ax, hy = a.handle[1] - ay, l = hx * hx + hy * hy || 1;
+    const k = Math.max(0.05, ((wx - ax) * hx + (wy - ay) * hy) / l);
+    sel.items.forEach((it, j) => {
+      const o = a.orig[j]; for (let i = 0; i < o.length; i += 2) { it.op.pts[i] = ax + (o[i] - ax) * k; it.op.pts[i+1] = ay + (o[i+1] - ay) * k; }
+      if (it.op.kind === 'text') { it.op.size = a.meta[j].size * k; it.op.bw = a.meta[j].bw * k; }
+    });
+  }
+  for (const it of sel.items) dirty(it.L);
+  requestRender();
+}
+// the one item nudge will move: whichever has a point closest to where you start, within the nudge circle
+function nudgeTarget(wx, wy) {
+  const R = ERASER[state.nudgeSize] / 2 / view.s; let best = null, bd = R * R;
+  for (const op of doc[state.layerFor.nudge]) {
+    if (op.kind === 'text' || op.kind === 'erase') continue;
+    const p = op.pts;
+    for (let i = 0; i < p.length; i += 2) { const d2 = (p[i] - wx) ** 2 + (p[i+1] - wy) ** 2; if (d2 < bd) { bd = d2; best = op; } }
+  }
+  return best;
+}
+function nudgeTo(wx, wy) {
+  const a = action, [cx, cy] = a.prev, dx = wx - cx, dy = wy - cy; a.prev = [wx, wy];
+  if (!dx && !dy) return;
+  const R = ERASER[state.nudgeSize] / 2 / view.s, R2 = R * R, L = state.layerFor.nudge;
+  for (const op of (a.target ? [a.target] : [])) {
+    const p = op.pts; let hit = false;
+    for (let i = 0; i < p.length; i += 2) {
+      const d2 = (p[i] - cx) ** 2 + (p[i+1] - cy) ** 2;
+      if (d2 < R2) { const f = (1 - d2 / R2) ** 2; p[i] += dx * f; p[i+1] += dy * f; hit = true; }
+    }
+    if (hit) { a.changed = true; a.touched.add(op); }
+  }
+  if (a.changed) dirty(L);
+}
+function endAction(cancelled) {
+  const a = action; action = null;
+  if (!a) return;
+  if (a.type === 'draw') {
+    const op = live.op, layers = live.layers; live = null;
+    if (cancelled) { requestRender(); return; }
+    if (a.tool === 'pen') { const n = op.pts.length; if (Math.hypot(a.raw[0] - op.pts[n-2], a.raw[1] - op.pts[n-1]) > 0.01) op.pts.push(a.raw[0], a.raw[1]); }
+    if (op.kind === 'fill' && op.pts.length < 6) { requestRender(); return; }
+    if (op.ws) densifyW(op); else op.pts = round(densify(op.pts, 4));
+    pushHistory();
+    layers.forEach((L, i) => { doc[L].push(i ? clone(op) : op); dirty(L); });
+    save(); requestRender(); return;
+  }
+  if (a.type === 'lasso') { if (!cancelled) computeSelection(a.pts); requestRender(); return; }
+  if (a.type === 'texttap') { if (!cancelled) textTap(a.start[0], a.start[1]); return; }
+  if (a.type === 'move' || a.type === 'scale' || a.type === 'width') {
+    if (!a.moved) { undoStack.pop(); updateUndo(); }
+    else { for (const it of sel.items) { it.op.pts = round(it.op.pts); if (it.op.kind === 'text') { it.op.size = Math.round(it.op.size * 100) / 100; it.op.bw = Math.round(it.op.bw * 100) / 100; } } save(); }
+    requestRender(); return;
+  }
+  if (a.type === 'nudge') {
+    if (!a.changed) { undoStack.pop(); updateUndo(); }
+    else { for (const op of a.touched) { if (op.ws) densifyW(op); else op.pts = round(densify(op.pts, 4)); } dirty(state.layerFor.nudge); save(); }
+    if (a.pointerType === 'touch') hover = null;
+    requestRender(); return;
+  }
+  if (a.type === 'pan') return;
+}
+function cancelAction() {
+  if (!action) return;
+  if (action.type === 'draw') { live = null; action = null; requestRender(); return; }
+  endAction(true);
+}
+function computeSelection(lasso) {
+  const layers = layersFor(state.layerFor.select);
+  let len = 0;
+  for (let i = 2; i < lasso.length; i += 2) len += Math.hypot(lasso[i] - lasso[i-2], lasso[i+1] - lasso[i-1]);
+  const items = [];
+  if (len * view.s < 12) {
+    const x = lasso[0], y = lasso[1];
+    for (const L of layers.slice().reverse()) {
+      const ops = doc[L];
+      for (let i = ops.length - 1; i >= 0; i--) if (ops[i].kind !== 'erase' && hitOp(ops[i], x, y, 10 / view.s)) { items.push({ L, op: ops[i] }); break; }
+      if (items.length) break;
+    }
+  } else if (lasso.length >= 6) {
+    for (const L of layers) for (const op of doc[L]) {
+      let inside = 0, n = op.pts.length / 2;
+      if (op.kind === 'text') { const b = opBox(op); n = 1; inside = pip(lasso, (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2) ? 1 : 0; }
+      else for (let i = 0; i < op.pts.length; i += 2) if (pip(lasso, op.pts[i], op.pts[i+1])) inside++;
+      if (inside / n >= 0.5) items.push({ L, op });
+    }
+    if (items.every(it => it.op.kind === 'erase')) items.length = 0;
+  }
+  sel = items.length ? { items } : null;
+  updateSub();
+}
+function deleteSel() {
+  if (!sel) return; pushHistory();
+  for (const it of sel.items) { const i = doc[it.L].indexOf(it.op); if (i >= 0) doc[it.L].splice(i, 1); dirty(it.L); }
+  sel = null; updateSub(); save(); requestRender();
+}
+function duplicateSel() {
+  if (!sel) return; pushHistory();
+  const off = 24 / view.s;
+  const items = sel.items.map(it => { const op = clone(it.op); op.pts = round(op.pts.map((v, i) => v + off)); doc[it.L].push(op); dirty(it.L); return { L: it.L, op }; });
+  sel = { items }; updateSub(); save(); requestRender();
+}
+
+// ---------- keyboard ----------
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (e.code === 'Space') { spaceDown = true; e.preventDefault(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); deleteSel(); }
+  if (e.key === 'Escape') { sel = null; updateSub(); closePops(); requestRender(); }
+});
+addEventListener('keyup', e => { if (e.code === 'Space') spaceDown = false; });
+
+// ---------- UI ----------
+const bar = document.getElementById('bar'), sub = document.getElementById('sub');
+const MAX_SWATCHES = 8;
+function buildSwatches() {
+  fixActive();
+  for (const g of ['pen', 'background', 'shadow']) {
+    const wrap = bar.querySelector(`[data-group="${g}"] .sw`); wrap.innerHTML = '';
+    pal()[g].forEach((col, i) => {
+      const b = document.createElement('button'); b.className = 'swatch'; b.dataset.g = g; b.dataset.i = i;
+      b.title = `${g} colour ${i + 1} – tap again to edit`;
+      wrap.appendChild(b);
+    });
+    if (pal()[g].length < MAX_SWATCHES) {
+      const add = document.createElement('button'); add.className = 'swatch-add'; add.dataset.g = g; add.title = `Add a ${g} colour`;
+      add.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v10M7 12h10"/></svg>';
+      wrap.appendChild(add);
+    }
+  }
+}
+function fixActive() { for (const g of ['pen', 'background', 'shadow']) state.active[g] = Math.max(0, Math.min(state.active[g], pal()[g].length - 1)); }
+function updateBar() {
+  bar.querySelectorAll('.swatch').forEach(b => {
+    const g = b.dataset.g, i = +b.dataset.i;
+    b.style.background = pal()[g][i];
+    b.classList.toggle('cur', state.active[g] === i);
+    b.classList.toggle('on', state.tool === g && state.active[g] === i);
+  });
+  document.getElementById('palname').textContent = state.palettes[state.paletteIndex].name;
+  bar.querySelectorAll('.tool').forEach(b => b.classList.toggle('on', b.dataset.tool === state.tool));
+  document.getElementById('grid').classList.toggle('on', state.grid);
+  updateUndo();
+}
+function updateUndo() {
+  document.getElementById('undo').disabled = !undoStack.length;
+  document.getElementById('redo').disabled = !redoStack.length;
+}
+function setTool(t) {
+  if (editing) commitText();
+  if (t !== 'select' && sel) sel = null;
+  state.tool = t; hover = null;
+  updateBar(); updateSub(); requestRender(); save();
+}
+bar.addEventListener('click', e => {
+  const add = e.target.closest('.swatch-add');
+  if (add) {
+    const g = add.dataset.g, list = pal()[g];
+    list.push(list[list.length - 1]); state.active[g] = list.length - 1;
+    buildSwatches(); setTool(g); save();
+    openHex(g, list.length - 1, bar.querySelector(`.swatch[data-g="${g}"][data-i="${list.length - 1}"]`));
+    return;
+  }
+  const sw = e.target.closest('.swatch');
+  if (sw) {
+    const g = sw.dataset.g, i = +sw.dataset.i;
+    if (state.tool === g && state.active[g] === i) openHex(g, i, sw);
+    else { state.active[g] = i; setTool(g); closePops(); }
+    return;
+  }
+  const tb = e.target.closest('.tool');
+  if (tb) { closePops(); setTool(tb.dataset.tool); }
+});
+document.getElementById('grid').onclick = () => { state.grid = !state.grid; updateBar(); requestRender(); save(); };
+document.getElementById('undo').onclick = () => { if (editing) commitText(); undo(); };
+document.getElementById('redo').onclick = () => { if (editing) commitText(); redo(); };
+const clearBtn = document.getElementById('clear'); let clearTimer = 0;
+clearBtn.onclick = () => {
+  if (!clearBtn.classList.contains('warn')) {
+    clearBtn.classList.add('warn'); clearBtn.dataset.html = clearBtn.innerHTML; clearBtn.textContent = 'Clear all?';
+    clearTimer = setTimeout(resetClear, 3000); return;
+  }
+  resetClear();
+  if (!LAYERS.some(L => doc[L].length)) return;
+  pushHistory(); doc = { shadow: [], background: [], pen: [] }; sel = null; allDirty(); updateSub(); save(); requestRender();
+  toast('Cleared – undo to bring it back');
+};
+function resetClear() { clearTimeout(clearTimer); if (clearBtn.classList.contains('warn')) { clearBtn.classList.remove('warn'); clearBtn.innerHTML = clearBtn.dataset.html; } }
+
+function seg(name, opts, cur) {
+  return `<div class="seg" data-seg="${name}">` + opts.map(([v, l]) => `<button data-v="${v}" class="${String(v) === String(cur) ? 'on' : ''}">${l}</button>`).join('') + '</div>';
+}
+const L3 = [['pen', 'Pen'], ['background', 'Background'], ['shadow', 'Shadow']];
+function updateSub() {
+  const t = state.tool; let h = '';
+  if (t === 'pen') h = `<span class="sl">Smoothing</span>${seg('smoothing', [[0.02, '2%'], [0.63, '63%']], state.smoothing)}<button class="pill ${state.dashed ? 'on' : ''}" data-act="dashed">Dashed</button>`;
+  else if (t === 'shadow') h = `<span class="sl">Position</span>${seg('shadowpos', [['back', 'Behind background'], ['front', 'In front of background']], state.shadowFront ? 'front' : 'back')}`;
+  else if (t === 'background') h = `<span class="hint">Draw round an area to fill it</span>`;
+  else if (t === 'select') {
+    h = `<span class="sl">Layer</span>${seg('layer:select', [['all', 'All'], ...L3], state.layerFor.select)}`;
+    if (sel) h += `<span class="vdiv"></span><button class="pill" data-act="dup">Duplicate</button><button class="pill danger" data-act="del">Delete</button><button class="pill" data-act="desel">Done</button>`;
+  }
+  else if (t === 'text') {
+    const p = state.palettes[state.paletteIndex];
+    const opts = [`<option value="">System font</option>`, ...fonts.map(f => `<option value="${f.id}" ${p.font === f.id ? 'selected' : ''}>${esc(f.name)}</option>`)].join('');
+    h = `<span class="hint">Tap to add text · tap text to edit</span><span class="vdiv"></span><span class="sl">Font for ${esc(p.name)}</span><select id="fontsel">${opts}</select><label class="pill" for="fontfile" role="button" style="cursor:pointer">Add font</label>`;
+  }
+  else if (t === 'nudge') h = `<span class="sl">Layer</span>${seg('layer:nudge', L3, state.layerFor.nudge)}<span class="sl">Size</span>${seg('nsize', [['S', 'S'], ['M', 'M'], ['L', 'L']], state.nudgeSize)}`;
+  else if (t === 'eraser') h = `<span class="sl">Layer</span>${seg('layer:eraser', L3, state.layerFor.eraser)}<span class="sl">Size</span>${seg('esize', [['S', 'S'], ['M', 'M'], ['L', 'L']], state.eraserSize)}`;
+  sub.innerHTML = h; sub.hidden = !h;
+}
+sub.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const sg = b.closest('.seg');
+  if (sg) {
+    const name = sg.dataset.seg, v = b.dataset.v;
+    if (name === 'smoothing') state.smoothing = parseFloat(v);
+    else if (name === 'esize') state.eraserSize = v;
+    else if (name === 'nsize') state.nudgeSize = v;
+    else if (name === 'shadowpos') state.shadowFront = v === 'front';
+    else if (name.startsWith('layer:')) { const tool = name.slice(6); state.layerFor[tool] = v; if (tool === 'select') sel = null; }
+    save(); updateSub(); requestRender(); return;
+  }
+  const act = b.dataset.act;
+  if (act === 'dashed') { state.dashed = !state.dashed; save(); updateSub(); }
+  else if (act === 'del') deleteSel();
+  else if (act === 'dup') duplicateSel();
+  else if (act === 'desel') { sel = null; updateSub(); requestRender(); }
+});
+function positionSub() { sub.style.top = (bar.getBoundingClientRect().bottom + 8) + 'px'; }
+
+// hex editor
+const hexpop = document.getElementById('hexpop'), hexin = document.getElementById('hexin'), hexpick = document.getElementById('hexpick'), hexprev = document.getElementById('hexprev');
+let hexTarget = null;
+function normHex(v) {
+  v = v.trim().replace(/^#/, '');
+  if (/^[0-9a-f]{3}$/i.test(v)) v = v.split('').map(c => c + c).join('');
+  return /^[0-9a-f]{6}$/i.test(v) ? '#' + v.toLowerCase() : null;
+}
+function openHex(g, i, el) {
+  document.getElementById('hexdel').hidden = pal()[g].length < 2;
+  closePops(); hexTarget = { g, i };
+  const col = pal()[g][i];
+  hexin.value = col.toUpperCase(); hexpick.value = col; hexprev.style.background = col; hexin.classList.remove('bad');
+  hexpop.hidden = false;
+  const r = el.getBoundingClientRect();
+  hexpop.style.left = Math.max(8, Math.min(r.left - 10, innerWidth - hexpop.offsetWidth - 8)) + 'px';
+  hexpop.style.top = (r.bottom + 12) + 'px';
+}
+hexin.addEventListener('input', () => { const h = normHex(hexin.value); hexin.classList.toggle('bad', !h); if (h) { hexprev.style.background = h; hexpick.value = h; } });
+hexpick.addEventListener('input', () => { hexin.value = hexpick.value.toUpperCase(); hexprev.style.background = hexpick.value; hexin.classList.remove('bad'); });
+hexin.addEventListener('keydown', e => { if (e.key === 'Enter') saveHex(); if (e.key === 'Escape') closePops(); });
+document.getElementById('hexok').onclick = saveHex;
+document.getElementById('hexcancel').onclick = closePops;
+document.getElementById('hexdel').onclick = () => {
+  const { g, i } = hexTarget, list = pal()[g];
+  if (list.length < 2) return;
+  list.splice(i, 1);
+  if (state.active[g] >= i && state.active[g] > 0) state.active[g]--;
+  closePops(); buildSwatches(); updateBar(); save();
+};
+function saveHex() {
+  const h = normHex(hexin.value); if (!h) { hexin.classList.add('bad'); return; }
+  pal()[hexTarget.g][hexTarget.i] = h; save(); updateBar(); closePops();
+}
+
+// export
+const exportpop = document.getElementById('exportpop'), expBg = document.getElementById('exp-bg'), expImg = document.getElementById('exp-img');
+const expResult = document.getElementById('exp-result'), expSave = document.getElementById('exp-save');
+let lastBlob = null, downloads = null;
+document.getElementById('export').onclick = () => {
+  if (!exportpop.hidden) { closePops(); return; }
+  closePops();
+  document.getElementById('exp-title').textContent = sel ? 'Export selection' : 'Export drawing';
+  expBg.checked = state.exportBg; expResult.hidden = true; bkConfirm.hidden = true; updateSaveButtons();
+  exportpop.style.top = (bar.getBoundingClientRect().bottom + 8) + 'px';
+  exportpop.hidden = false;
+};
+expBg.onchange = () => { state.exportBg = expBg.checked; save(); };
+document.getElementById('exp-close').onclick = closePops;
+document.getElementById('exp-go').onclick = () => {
+  const selected = sel ? new Set(sel.items.map(it => it.op)) : null;
+  const box = selected ? unionBox([...selected]) : unionBox(LAYERS.flatMap(L => doc[L]));
+  if (!box) { toast('Nothing to export yet'); return; }
+  const pad = 16, x0 = box.x0 - pad, y0 = box.y0 - pad, w = box.x1 - box.x0 + pad * 2, h = box.y1 - box.y0 + pad * 2;
+  const scale = Math.min(3, 4096 / Math.max(w, h));
+  const out = document.createElement('canvas'); out.width = Math.ceil(w * scale); out.height = Math.ceil(h * scale);
+  const o = out.getContext('2d');
+  if (state.exportBg) { o.fillStyle = PAPER; o.fillRect(0, 0, out.width, out.height); }
+  const lc = document.createElement('canvas'); lc.width = out.width; lc.height = out.height; const l = lc.getContext('2d');
+  for (const P of PASSES) {
+    l.setTransform(1, 0, 0, 1, 0, 0); l.clearRect(0, 0, lc.width, lc.height);
+    l.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
+    // erase ops always apply, in order, so partially erased strokes export as they look
+    for (const op of doc[P.L]) if (P.f(op) && op.kind !== 'text' && (!selected || selected.has(op) || op.kind === 'erase')) drawOp(l, op);
+    o.drawImage(lc, 0, 0);
+  }
+  l.setTransform(1, 0, 0, 1, 0, 0); l.clearRect(0, 0, lc.width, lc.height);
+  l.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
+  for (const op of doc.pen) if (op.kind === 'text' && (!selected || selected.has(op))) drawOp(l, op);
+  o.drawImage(lc, 0, 0);
+  out.toBlob(blob => {
+    lastBlob = blob;
+    if (expImg.src) URL.revokeObjectURL(expImg.src);
+    expImg.src = URL.createObjectURL(blob);
+    expResult.hidden = false; expSave.hidden = !canSave();
+  }, 'image/png');
+};
+// Saving files: Claude's downloads capability when running inside Claude, a normal download when self-hosted
+let inFrame = true; try { inFrame = window.self !== window.top; } catch (_) {}
+function canSave() { return !!downloads || !inFrame; }
+const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`; };
+async function saveFile(blob, filename) {
+  if (downloads) {
+    try { await downloads.save({ filename, data: blob }); return true; }
+    catch (err) {
+      const c = err && err.code;
+      if (c === 'declined') return false;
+      if (c === 'rate_limited') { toast('One moment – try again'); return false; }
+      if (inFrame) { downloads = null; updateSaveButtons(); toast('Saving isn’t available here'); return false; }
+    }
+  }
+  if (inFrame) { toast('Saving isn’t available here'); return false; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  return true;
+}
+function updateSaveButtons() {
+  if (!expResult.hidden) expSave.hidden = !canSave();
+  document.getElementById('bk-save').hidden = !canSave();
+}
+expSave.onclick = () => { if (lastBlob) saveFile(lastBlob, `sketch-${stamp()}.png`); };
+try {
+  if (window.claude && typeof window.claude.use === 'function')
+    window.claude.use('downloads').then(d => { downloads = d; updateSaveButtons(); }).catch(() => {});
+} catch (_) {}
+
+// ---------- text ----------
+const editor = document.getElementById('editor');
+let editing = null;
+const TEXT_SIZE = 28, TEXT_W = 320, TEXT_LH = 1.25;
+function textTap(wx, wy) {
+  const tol = 6 / view.s;
+  for (let i = doc.pen.length - 1; i >= 0; i--) {
+    const op = doc.pen[i];
+    if (op.kind === 'text' && hitOp(op, wx, wy, tol)) { startEditing(op, false); return; }
+  }
+  const op = { kind: 'text', text: '', pts: round([wx, wy - TEXT_SIZE * TEXT_LH / 2]), bw: TEXT_W, size: TEXT_SIZE, lh: TEXT_LH,
+    color: curColor('pen'), font: state.palettes[state.paletteIndex].font || null };
+  startEditing(op, true);
+}
+function startEditing(op, isNew) {
+  const before = snap();
+  if (!isNew) op = cow('pen', op);
+  editing = { op, isNew, before, text: op.text };
+  sel = null; updateSub();
+  editor.value = op.text; editor.hidden = false; styleEditor();
+  dirty('pen'); requestRender();
+  editor.focus({ preventScroll: true });
+  const n = editor.value.length; try { editor.setSelectionRange(n, n); } catch (_) {}
+}
+function styleEditor() {
+  const op = editing.op, [sx, sy] = toScreen(op.pts[0], op.pts[1]);
+  Object.assign(editor.style, {
+    left: sx + 'px', top: sy + 'px', width: op.bw + 'px', fontSize: op.size + 'px', lineHeight: String(op.lh),
+    fontFamily: familyFor(op.font), color: op.color, transform: `scale(${view.s})`
+  });
+  editor.style.height = 'auto'; editor.style.height = Math.max(editor.scrollHeight, op.size * op.lh) + 'px';
+}
+editor.addEventListener('input', () => { editing.op.text = editor.value; styleEditor(); });
+editor.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); commitText(); } });
+function commitText() {
+  if (!editing) return;
+  const { op, isNew, before, text } = editing; editing = null;
+  editor.hidden = true; editor.blur();
+  op.text = editor.value.replace(/\s+$/, '');
+  const empty = !op.text.trim();
+  if (isNew) { if (!empty) { pushHistory(); doc.pen.push(op); } }
+  else if (empty) { undoStack.push(before); redoStack = []; doc.pen.splice(doc.pen.indexOf(op), 1); updateUndo(); }
+  else if (op.text !== text) { undoStack.push(before); redoStack = []; updateUndo(); }
+  dirty('pen'); save(); requestRender();
+}
+
+// ---------- fonts ----------
+let idb = null;
+function openDB() {
+  return new Promise((res, rej) => {
+    try {
+      const rq = indexedDB.open('sketchpad-fonts', 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore('fonts', { keyPath: 'id' });
+      rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error);
+    } catch (e) { rej(e); }
+  });
+}
+const fontBytes = {};   // id -> ArrayBuffer, for backups
+async function registerFont(id, name, data) {
+  const family = 'skf-' + id;
+  try { const ff = new FontFace(family, data); await ff.load(); document.fonts.add(ff); fonts.push({ id, name, family }); return true; }
+  catch (e) { return false; }
+}
+function fontsChanged() { layoutCache = new WeakMap(); allDirty(); if (state.tool === 'text') updateSub(); requestRender(); if (editing) styleEditor(); }
+async function loadFonts() {
+  try {
+    idb = await openDB();
+    const all = await new Promise((res, rej) => { const q = idb.transaction('fonts').objectStore('fonts').getAll(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+    for (const f of all) { if (await registerFont(f.id, f.name, f.data.slice(0))) fontBytes[f.id] = f.data; }
+  } catch (e) {}
+  fontsChanged();
+}
+document.getElementById('fontfile').addEventListener('change', async e => {
+  const file = e.target.files && e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  const data = await file.arrayBuffer();
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name = file.name.replace(/\.[^.]+$/, '');
+  if (!(await registerFont(id, name, data.slice(0)))) { toast("That file doesn't look like a font I can read"); return; }
+  fontBytes[id] = data;
+  try {
+    if (!idb) throw 0;
+    await new Promise((res, rej) => { const tx = idb.transaction('fonts', 'readwrite'); tx.objectStore('fonts').put({ id, name, data }); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+  } catch (_) { toast("Font added, but it couldn't be stored – it will be gone next time"); }
+  state.palettes[state.paletteIndex].font = id; save(); fontsChanged();
+  toast(`${name} added to ${state.palettes[state.paletteIndex].name}`);
+});
+sub.addEventListener('change', e => {
+  if (e.target.id !== 'fontsel') return;
+  state.palettes[state.paletteIndex].font = e.target.value || null; save();
+});
+
+// ---------- backup ----------
+function toB64(buf) {
+  const u = new Uint8Array(buf); let s = '';
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function fromB64(b64) { const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; }
+function storeFont(id, name, data) {
+  return new Promise(res => {
+    try { if (!idb) return res(false); const tx = idb.transaction('fonts', 'readwrite'); tx.objectStore('fonts').put({ id, name, data }); tx.oncomplete = () => res(true); tx.onerror = () => res(false); }
+    catch (_) { res(false); }
+  });
+}
+document.getElementById('bk-save').onclick = () => {
+  if (editing) commitText();
+  const used = fonts.filter(f => fontBytes[f.id]);
+  const backup = { app: 'sketchpad', v: 1, saved: new Date().toISOString(), state, doc, view,
+    fonts: used.map(f => ({ id: f.id, name: f.name, data: toB64(fontBytes[f.id]) })) };
+  saveFile(new Blob([JSON.stringify(backup)], { type: 'application/json' }), `sketchpad-backup-${stamp()}.json`);
+};
+let pendingBackup = null;
+const bkConfirm = document.getElementById('bk-confirm');
+document.getElementById('bkfile').addEventListener('change', async e => {
+  const file = e.target.files && e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  let data;
+  try { data = JSON.parse(await file.text()); } catch (_) { data = null; }
+  if (!data || data.app !== 'sketchpad' || !data.state || !data.doc) { toast("That doesn't look like a Sketchpad backup"); return; }
+  pendingBackup = data;
+  const when = data.saved ? new Date(data.saved).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : 'an unknown date';
+  const n = (data.state.palettes || []).length;
+  document.getElementById('bk-msg').textContent = `Backup from ${when} with ${n} palette${n === 1 ? '' : 's'}. This replaces your current drawing and palettes.`;
+  exportpop.hidden = false; bkConfirm.hidden = false;
+});
+document.getElementById('bk-no').onclick = () => { pendingBackup = null; bkConfirm.hidden = true; };
+document.getElementById('bk-yes').onclick = async () => {
+  const data = pendingBackup; pendingBackup = null; bkConfirm.hidden = true;
+  if (!data) return;
+  if (editing) commitText();
+  for (const f of data.fonts || []) {
+    if (fonts.some(x => x.id === f.id)) continue;
+    try { const buf = fromB64(f.data); if (await registerFont(f.id, f.name, buf.slice(0))) { fontBytes[f.id] = buf; await storeFont(f.id, f.name, buf); } } catch (_) {}
+  }
+  const s2 = data.state;
+  Object.assign(state, s2);
+  state.layerFor = Object.assign({ select: 'all', nudge: 'pen', eraser: 'pen' }, s2.layerFor || {});
+  if (!Array.isArray(state.palettes) || !state.palettes.length) state.palettes = [{ name: 'Palette 1', colours: { pen: ['#1f1f1f'], background: ['#a9d8c0'], shadow: ['#b893c7'] } }];
+  if (!state.palettes[state.paletteIndex]) state.paletteIndex = 0;
+  doc = { shadow: [], background: [], pen: [] };
+  for (const L of LAYERS) if (Array.isArray(data.doc[L])) doc[L] = data.doc[L];
+  if (data.view && isFinite(data.view.s)) view = data.view;
+  undoStack = []; redoStack = []; sel = null;
+  buildSwatches(); updateBar(); updateSub(); fontsChanged(); save(); closePops();
+  toast('Backup restored');
+};
+
+// palettes
+const palpop = document.getElementById('palpop'), pallist = document.getElementById('pallist');
+let palEditing = -1, palConfirm = -1;
+const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5l4 4L9 19H5v-4z"/></svg>';
+const ICON_DEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5"/></svg>';
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function renderPalettes() {
+  document.getElementById('palname').textContent = state.palettes[state.paletteIndex].name;
+  pallist.innerHTML = state.palettes.map((p, i) => {
+    const dots = ['pen', 'background', 'shadow'].flatMap(g => p.colours[g]).map(c => `<i style="background:${c}"></i>`).join('');
+    if (i === palEditing) return `<div class="prow on" data-i="${i}"><input value="${esc(p.name)}" maxlength="40" data-role="name"><button class="btn primary" data-role="ok">Save</button></div>`;
+    const del = state.palettes.length > 1 ? (palConfirm === i
+      ? `<button class="btn" data-role="del" style="color:#b23b2e;padding:6px 10px">Delete?</button>`
+      : `<button class="mini" data-role="del" title="Delete">${ICON_DEL}</button>`) : '';
+    return `<div class="prow ${i === state.paletteIndex ? 'on' : ''}" data-i="${i}"><button class="pick" data-role="pick"><span class="dots">${dots}</span><span class="n">${esc(p.name)}</span></button><button class="mini" data-role="edit" title="Rename">${ICON_EDIT}</button>${del}</div>`;
+  }).join('');
+  const inp = pallist.querySelector('input'); if (inp) { inp.focus(); inp.select(); }
+}
+function commitRename() {
+  const inp = pallist.querySelector('input'); if (!inp) return;
+  const v = inp.value.trim(); if (v) state.palettes[palEditing].name = v;
+  palEditing = -1; save(); renderPalettes();
+}
+document.getElementById('palbtn').onclick = () => {
+  if (!palpop.hidden) { closePops(); return; }
+  closePops(); palEditing = -1; palConfirm = -1; renderPalettes();
+  const r = document.getElementById('palbtn').getBoundingClientRect();
+  palpop.style.left = Math.max(8, r.left - 6) + 'px'; palpop.style.top = (r.bottom + 12) + 'px';
+  palpop.hidden = false;
+};
+pallist.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const i = +b.closest('.prow').dataset.i, role = b.dataset.role;
+  if (role === 'pick') { state.paletteIndex = i; palConfirm = -1; buildSwatches(); save(); updateBar(); updateSub(); renderPalettes(); }
+  else if (role === 'edit') { palEditing = i; palConfirm = -1; renderPalettes(); }
+  else if (role === 'ok') commitRename();
+  else if (role === 'del') {
+    if (palConfirm !== i) { palConfirm = i; renderPalettes(); return; }
+    state.palettes.splice(i, 1); setTimeout(() => { buildSwatches(); updateBar(); });
+    if (state.paletteIndex >= i && state.paletteIndex > 0) state.paletteIndex--;
+    palConfirm = -1; save(); updateBar(); renderPalettes();
+  }
+});
+pallist.addEventListener('keydown', e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') { palEditing = -1; renderPalettes(); } });
+document.getElementById('palnew').onclick = () => {
+  const n = state.palettes.length + 1;
+  state.palettes.push({ name: 'Palette ' + n, colours: JSON.parse(JSON.stringify(pal())), font: state.palettes[state.paletteIndex].font || null });
+  state.paletteIndex = state.palettes.length - 1; palEditing = state.paletteIndex; palConfirm = -1;
+  save(); updateBar(); renderPalettes();
+};
+
+function closePops() { hexpop.hidden = true; exportpop.hidden = true; palpop.hidden = true; }
+
+let toastTimer = 0;
+function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200); }
+
+// ---------- start ----------
+buildSwatches(); updateBar(); updateSub(); loadFonts();
+// offline support and protection against the browser clearing storage
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (_) {}
+addEventListener('resize', resize);
+resize();
+})();
+</script>
+</body>
+</html>

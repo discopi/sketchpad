@@ -1,5 +1,5 @@
 // Sketchpad offline support: serve from the saved copy, refresh it in the background when online.
-const CACHE = 'sketchpad-v1';
+const CACHE = 'sketchpad-v2';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

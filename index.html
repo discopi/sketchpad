@@ -223,29 +223,31 @@ function cow(L, op) { const i = doc[L].indexOf(op); if (i < 0) return op; const 
 
 // ---------- canvas setup ----------
 const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-const caches = {};
-for (const L of [...LAYERS, 'shadowFront', 'text']) { const c = document.createElement('canvas'); caches[L] = { c, x: c.getContext('2d'), dirty: true }; }
-const scratch = document.createElement('canvas'), sctx = scratch.getContext('2d');
-const below = document.createElement('canvas'), bctx = below.getContext('2d');
-const above = document.createElement('canvas'), actx = above.getContext('2d');
-let cacheVersion = 0, compKey = '';
+const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true }) || canvas.getContext('2d');
+// Only three off-screen canvases: everything below the layer you're working on, that layer, and everything above it.
+// (Tablet browsers slow down sharply when a page holds many full-screen canvases.)
+const below = document.createElement('canvas'), bctx = below.getContext('2d', { alpha: false });
+const act = document.createElement('canvas'), actx = act.getContext('2d');
+const above = document.createElement('canvas'), abctx = above.getContext('2d');
 let dpr = 1, W = 0, H = 0;
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight;
-  for (const c of [canvas, scratch, below, above, ...Object.values(caches).map(k => k.c)]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  for (const c of [canvas, below, act, above]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
   positionSub(); allDirty(); requestRender();
 }
-function allDirty() { for (const k of Object.values(caches)) k.dirty = true; }
-function dirty(L) { caches[L].dirty = true; if (L === 'pen') caches.text.dirty = true; if (L === 'shadow') caches.shadowFront.dirty = true; }
+const dirtyPasses = new Set(); let baseDirty = true, split = -1, aboveEmpty = true;
+function allDirty() { baseDirty = true; }
+function dirty(L) { PASSES.forEach((P, i) => { if (P.L === L) dirtyPasses.add(i); }); }
 // draw order: shadow (behind), background, shadow in front of background, pen; erase ops apply to both shadow passes
 const PASSES = [
   { key: 'shadow', L: 'shadow', f: op => !op.front },
   { key: 'background', L: 'background', f: op => op.kind !== 'text' },
   { key: 'shadowFront', L: 'shadow', f: op => op.front || op.kind === 'erase' },
-  { key: 'pen', L: 'pen', f: op => op.kind !== 'text' }
+  { key: 'pen', L: 'pen', f: op => op.kind !== 'text' },
+  { key: 'text', L: 'pen', f: op => op.kind === 'text' && !(editing && editing.op === op) }   // text sits on top, untouched by the eraser
 ];
+const passEmpty = PASSES.map(() => true);
 function viewT(c) { c.setTransform(dpr * view.s, 0, 0, dpr * view.s, dpr * view.x, dpr * view.y); }
 function toWorld(px, py) { return [(px - view.x) / view.s, (py - view.y) / view.s]; }
 function toScreen(wx, wy) { return [wx * view.s + view.x, wy * view.s + view.y]; }
@@ -337,52 +339,49 @@ function renderOps(c, ops) {
 // ---------- render ----------
 let raf = 0, live = null, sel = null, action = null, hover = null;
 function requestRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }
-function refreshCaches() {
-  for (const P of PASSES) {
-    const k = caches[P.key];
-    if (k.dirty) { const ops = doc[P.L].filter(P.f); k.empty = !ops.some(op => op.kind !== 'erase'); renderOps(k.x, ops); k.dirty = false; cacheVersion++; }
-  }
-  const tk = caches.text;   // text sits above everything, untouched by the eraser
-  if (tk.dirty) { const ops = doc.pen.filter(op => op.kind === 'text' && !(editing && editing.op === op)); tk.empty = !ops.length; renderOps(tk.x, ops); tk.dirty = false; cacheVersion++; }
+function renderPass(i) {
+  const P = PASSES[i], ops = doc[P.L].filter(P.f);
+  passEmpty[i] = !ops.some(op => op.kind !== 'erase');
+  actx.setTransform(1, 0, 0, 1, 0, 0); actx.globalCompositeOperation = 'source-over';
+  actx.clearRect(0, 0, act.width, act.height);
+  if (!passEmpty[i]) { viewT(actx); for (const op of ops) drawOp(actx, op); actx.globalCompositeOperation = 'source-over'; }
 }
 function paintBase(c) {
   c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over';
   c.fillStyle = PAPER; c.fillRect(0, 0, canvas.width, canvas.height);
   if (state.grid) drawGrid(c);
 }
-function blit(c, k) { if (!k.empty) { c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(k.c, 0, 0); } }
+const ERASE_PASS = { pen: 3, background: 1, shadow: 0 };
+function wantedSplit() {
+  if (live) { const i = PASSES.findIndex(P => live.layers.includes(P.L) && P.f(live.op)); if (i >= 0) return i; }
+  const t = state.tool;
+  if (t === 'background') return 1;
+  if (t === 'shadow') return state.shadowFront ? 2 : 0;
+  if (t === 'eraser') return ERASE_PASS[state.layerFor.eraser];
+  if (t === 'nudge') return ERASE_PASS[state.layerFor.nudge];
+  if (t === 'text') return 4;
+  return 3;
+}
+// flatten the passes below and above the working layer (the slow step, only when something outside it changes)
+function rebuild(s) {
+  paintBase(bctx);
+  for (let i = 0; i < s; i++) { renderPass(i); if (!passEmpty[i]) { bctx.setTransform(1, 0, 0, 1, 0, 0); bctx.drawImage(act, 0, 0); } }
+  abctx.setTransform(1, 0, 0, 1, 0, 0); abctx.clearRect(0, 0, above.width, above.height); aboveEmpty = true;
+  for (let i = s + 1; i < PASSES.length; i++) { renderPass(i); if (!passEmpty[i]) { abctx.drawImage(act, 0, 0); aboveEmpty = false; } }
+  renderPass(s);
+}
 function render() {
-  refreshCaches();
-  const active = live ? PASSES.filter(P => live.layers.includes(P.L) && P.f(live.op)) : [];
-  if (active.length === 1) {
-    // fast path while drawing: everything below and above the layer being drawn on is pre-flattened
-    const ai = PASSES.indexOf(active[0]), key = cacheVersion + '|' + state.grid + '|' + ai;
-    if (key !== compKey) {
-      paintBase(bctx); PASSES.slice(0, ai).forEach(P => blit(bctx, caches[P.key]));
-      actx.setTransform(1, 0, 0, 1, 0, 0); actx.clearRect(0, 0, above.width, above.height);
-      PASSES.slice(ai + 1).forEach(P => blit(actx, caches[P.key])); blit(actx, caches.text);
-      compKey = key;
-    }
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
-    ctx.drawImage(below, 0, 0);
-    sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.globalCompositeOperation = 'source-over';
-    sctx.clearRect(0, 0, scratch.width, scratch.height); sctx.drawImage(caches[active[0].key].c, 0, 0);
-    viewT(sctx); drawOp(sctx, live.op);
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(scratch, 0, 0);
-    ctx.drawImage(above, 0, 0);
-    drawOverlay(); return;
-  }
-  paintBase(ctx);
-  for (const P of PASSES) {
-    const k = caches[P.key];
-    if (active.includes(P)) {
-      sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.globalCompositeOperation = 'source-over';
-      sctx.clearRect(0, 0, scratch.width, scratch.height); sctx.drawImage(k.c, 0, 0);
-      viewT(sctx); drawOp(sctx, live.op);
-      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(scratch, 0, 0);
-    } else blit(ctx, k);
-  }
-  blit(ctx, caches.text);
+  const s = wantedSplit();
+  if (s !== split || baseDirty || [...dirtyPasses].some(i => i !== s)) rebuild(s);
+  else if (dirtyPasses.has(s)) renderPass(s);
+  split = s; baseDirty = false; dirtyPasses.clear();
+  const erasing = live && live.op.kind === 'erase' && live.layers.includes(PASSES[s].L);
+  if (erasing) { viewT(actx); drawOp(actx, live.op); actx.globalCompositeOperation = 'source-over'; passEmpty[s] = false; }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(below, 0, 0);
+  if (!passEmpty[s]) ctx.drawImage(act, 0, 0);
+  if (live && !erasing) { viewT(ctx); drawOp(ctx, live.op); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; }
+  if (!aboveEmpty) ctx.drawImage(above, 0, 0);
   drawOverlay();
 }
 function drawGrid(ctx) {
@@ -871,7 +870,7 @@ bar.addEventListener('click', e => {
   const tb = e.target.closest('.tool');
   if (tb) { closePops(); setTool(tb.dataset.tool); }
 });
-document.getElementById('grid').onclick = () => { state.grid = !state.grid; updateBar(); requestRender(); save(); };
+document.getElementById('grid').onclick = () => { state.grid = !state.grid; allDirty(); updateBar(); requestRender(); save(); };
 document.getElementById('undo').onclick = () => { if (editing) commitText(); undo(); };
 document.getElementById('redo').onclick = () => { if (editing) commitText(); redo(); };
 const clearBtn = document.getElementById('clear'); let clearTimer = 0;
